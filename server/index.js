@@ -53,6 +53,7 @@ function initializeChatClients() {
       id: `twitch-${tags['id']}`,
       color: tags['color'] || '#FFFFFF'
     };
+    console.log(`[TWITCH] ${chatMessage.username}: ${chatMessage.message}`);
     io.emit('chat message', chatMessage);
   });
 
@@ -63,16 +64,21 @@ function initializeChatClients() {
   });
   youtubeChat.start().catch(console.error);
   youtubeChat.on('message', (data) => {
-    data.message.forEach(messageItem => {
-      const chatMessage = {
-        platform: 'youtube',
-        username: data.author.name,
-        message: messageItem.text || '',
-        id: `youtube-${data.id}`,
-        color: '#CCCCCC'
-      };
-      io.emit('chat message', chatMessage);
-    });
+    try {
+      data.message.forEach(messageItem => {
+        const chatMessage = {
+          platform: 'youtube',
+          username: data.author.name,
+          message: messageItem.text || '',
+          id: `youtube-${data.id}`,
+          color: '#CCCCCC'
+        };
+        console.log(`[YOUTUBE] ${chatMessage.username}: ${chatMessage.message}`);
+        io.emit('chat message', chatMessage);
+      });
+    } catch (error) {
+      console.error('Error processing YouTube message:', error);
+    }
   });
   youtubeChat.on('error', (err) => {
     console.error('YouTube Chat Error:', err);
@@ -82,15 +88,33 @@ function initializeChatClients() {
   if (tiktokLiveConnection) tiktokLiveConnection.disconnect();
   tiktokLiveConnection = new TikTokLiveConnection(config.tiktok.username);
   tiktokLiveConnection.connect().catch(err => console.error('Failed to connect to TikTok', err));
+
+  tiktokLiveConnection.on('connected', () => {
+    console.log('[TIKTOK] Connected to TikTok Live!');
+  });
+
+  tiktokLiveConnection.on('disconnected', () => {
+    console.log('[TIKTOK] Disconnected from TikTok Live.');
+  });
+
+  tiktokLiveConnection.on('error', (err) => {
+    console.error('[TIKTOK] TikTok Live Connector Error:', err);
+  });
+
   tiktokLiveConnection.on('chat', data => {
-    const chatMessage = {
-        platform: 'tiktok',
-        username: data.uniqueId,
-        message: data.comment,
-        id: `tiktok-${data.msgId}`,
-        color: '#000000'
-    };
-    io.emit('chat message', chatMessage);
+    try {
+      const chatMessage = {
+          platform: 'tiktok',
+          username: data.uniqueId,
+          message: data.comment,
+          id: `tiktok-${data.msgId}`,
+          color: '#000000'
+      };
+      console.log(`[TIKTOK] ${chatMessage.username}: ${chatMessage.message}`);
+      io.emit('chat message', chatMessage);
+    } catch (error) {
+      console.error('Error processing TikTok message:', error);
+    }
   });
 }
 

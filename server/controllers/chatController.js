@@ -44,6 +44,8 @@ const postChatMessage = async (req, res) => {
     // For now, we'll just return the saved message
     const populatedMessage = await ChatMessage.findById(savedMessage._id).populate('user', 'username profilePicture');
 
+    console.log(`[CHAT] ${populatedMessage.user.username}: ${populatedMessage.message}`);
+
     res.json(populatedMessage);
   } catch (error) {
     console.error(error.message);
