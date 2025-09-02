@@ -3,11 +3,14 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const tmi = require('tmi.js');
-const { YouTubeChat } = require('youtube-chat');
+const { LiveChat } = require('youtube-chat');
+const { TikTokLiveConnection } = require('tiktok-live-connector');
 const cors = require('cors');
+const fs = require('fs');
 
 const app = express();
 app.use(cors()); // Allow requests from the React app
+app.use(express.json()); // Middleware to parse JSON bodies
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -17,61 +20,91 @@ const io = new Server(server, {
   }
 });
 
-// --- Twitch Connection ---
-// NOTE: For a real app, this should be configurable.
-// I'm using a popular channel here so you can see messages immediately.
-const twitchClient = new tmi.Client({
-  channels: [ 'gamesdonequick' ]
-});
+// --- Config Management ---
+const configPath = './config.json';
 
-twitchClient.connect().catch(console.error);
+const getConfig = () => {
+  const rawdata = fs.readFileSync(configPath);
+  return JSON.parse(rawdata);
+};
 
-twitchClient.on('message', (channel, tags, message, self) => {
-  if (self) return; // Ignore messages from the bot itself
+const saveConfig = (config) => {
+  const data = JSON.stringify(config, null, 2);
+  fs.writeFileSync(configPath, data);
+};
 
-  // Construct a unified message object
-  const chatMessage = {
-    platform: 'twitch',
-    username: tags['display-name'],
-    message: message,
-    id: `twitch-${tags['id']}`,
-    color: tags['color'] || '#FFFFFF' // Use user's Twitch color or default to white
-  };
+let twitchClient, youtubeChat, tiktokLiveConnection;
 
-  // Send the message to all connected frontend clients
-  io.emit('chat message', chatMessage);
-});
+function initializeChatClients() {
+  let config = getConfig();
 
-// --- YouTube Connection ---
-// NOTE: For a real app, this should be configurable.
-const youtubeChat = new YouTubeChat({
-  apiKey: process.env.YOUTUBE_API_KEY,
-  liveId: 'jfKfPfyJRdk' // Lofi Girl stream - good for testing
-});
-
-youtubeChat.on('message', (data) => {
-  // The youtube-chat library can send multiple messages at once
-  data.message.forEach(messageItem => {
+  // --- Twitch Connection ---
+  if (twitchClient) twitchClient.disconnect();
+  twitchClient = new tmi.Client({
+    channels: [ config.twitch.username ]
+  });
+  twitchClient.connect().catch(console.error);
+  twitchClient.on('message', (channel, tags, message, self) => {
+    if (self) return;
     const chatMessage = {
-      platform: 'youtube',
-      username: data.author.name,
-      // Messages can be composed of text and emojis, so we combine them
-      message: messageItem.text || '',
-      id: `youtube-${data.id}`,
-      color: '#CCCCCC' // YouTube doesn't provide user colors, so we use a default
+      platform: 'twitch',
+      username: tags['display-name'],
+      message: message,
+      id: `twitch-${tags['id']}`,
+      color: tags['color'] || '#FFFFFF'
     };
-
-    // Send the message to all connected frontend clients
     io.emit('chat message', chatMessage);
   });
+
+  // --- YouTube Connection ---
+  if (youtubeChat) youtubeChat.stop();
+  youtubeChat = new LiveChat({
+    liveId: config.youtube.liveId
+  });
+  youtubeChat.start().catch(console.error);
+  youtubeChat.on('message', (data) => {
+    data.message.forEach(messageItem => {
+      const chatMessage = {
+        platform: 'youtube',
+        username: data.author.name,
+        message: messageItem.text || '',
+        id: `youtube-${data.id}`,
+        color: '#CCCCCC'
+      };
+      io.emit('chat message', chatMessage);
+    });
+  });
+  youtubeChat.on('error', (err) => {
+    console.error('YouTube Chat Error:', err);
+  });
+
+  // --- TikTok Connection ---
+  if (tiktokLiveConnection) tiktokLiveConnection.disconnect();
+  tiktokLiveConnection = new TikTokLiveConnection(config.tiktok.username);
+  tiktokLiveConnection.connect().catch(err => console.error('Failed to connect to TikTok', err));
+  tiktokLiveConnection.on('chat', data => {
+    const chatMessage = {
+        platform: 'tiktok',
+        username: data.uniqueId,
+        message: data.comment,
+        id: `tiktok-${data.msgId}`,
+        color: '#000000'
+    };
+    io.emit('chat message', chatMessage);
+  });
+}
+
+app.get('/api/config', (req, res) => {
+  res.json(getConfig());
 });
 
-// Start listening for YouTube chat messages
-youtubeChat.listen().catch(console.error);
-
-youtubeChat.on('error', (err) => {
-  console.error('YouTube Chat Error:', err);
+app.post('/api/config', (req, res) => {
+  saveConfig(req.body);
+  res.json({ message: 'Config saved successfully. Re-initializing connections...' });
+  initializeChatClients();
 });
+
+initializeChatClients();
 
 const PORT = 3001; // Port for the backend server
 server.listen(PORT, () => {

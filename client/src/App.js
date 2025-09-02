@@ -1,23 +1,22 @@
-import logo from './logo.svg';
+import React, { useState } from 'react';
 import './App.css';
+import ChatBox from './ChatBox';
+import Settings from './Settings';
 
 function App() {
+  const [showSettings, setShowSettings] = useState(false);
+
   return (
     <div className="App">
       <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
+        <nav>
+          <button onClick={() => setShowSettings(false)}>Chat</button>
+          <button onClick={() => setShowSettings(true)}>Settings</button>
+        </nav>
       </header>
+      <main>
+        {showSettings ? <Settings /> : <ChatBox />}
+      </main>
     </div>
   );
 }
